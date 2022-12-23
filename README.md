@@ -1,7 +1,7 @@
 libOGG_litedyn
 ===================
 
-It is free pascal bindings and wrapper around OGG library (Graphviz). Ogg is a free, open container format maintained by the Xiph.Org Foundation.
+It is free pascal bindings and wrapper around OGG library. Ogg is a free, open container format maintained by the Xiph.Org Foundation.
 
  
 ### Requirements
