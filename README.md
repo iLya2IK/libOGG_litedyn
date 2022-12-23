@@ -8,6 +8,7 @@ It is free pascal bindings and wrapper around OGG library. Ogg is a free, open c
 
 * [Free Pascal Compiler](http://freepascal.org)
 * [Lazarus IDE](http://www.lazarus.freepascal.org/) (optional)
+* [CommonUtils - lightweight lists, collections, seqs and hashes, helping classes for sqlite3 extension, gz compression, data streams - Copyright (c) 2018-2021, Ilya Medvedkov](https://github.com/iLya2IK/commonutils)
 * [OGG](https://xiph.org/ogg/)
 
 
