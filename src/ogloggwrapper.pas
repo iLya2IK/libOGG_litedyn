@@ -2,7 +2,7 @@
  OGLOGGWrapper:
    Wrapper for OGG library
 
-   Copyright (c) 2022 by Ilya Medvedkov
+   Copyright (c) 2022-2023 by Ilya Medvedkov
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -126,6 +126,174 @@ type
     function GetBuffer: pbyte;
   end;
 
+  { IOGGComment }
+
+  IOGGComment = interface(IUnknown)
+    ['{E4D5A74F-91D3-44EC-9CC8-40669CEBB75E}']
+    function Ref : Pointer;
+
+    procedure Init;
+    procedure Done;
+
+    procedure Add(const comment: String);
+    procedure AddTag(const tag, value: String);
+    function Query(const tag: String; index: integer): String;
+    function QueryCount(const tag: String): integer;
+  end;
+
+  TOGGEncDecType = (edtEncoder, edtDecoder);
+
+  { IOGGEncDec }
+
+  IOGGEncDec = interface(IUnknown)
+    ['{5881282E-DEF3-40B1-ABC3-87ABFF82E878}']
+    function InternalType : TOGGEncDecType;
+    function Ready : Boolean;
+  end;
+
+  TOGGSoundEncoderMode = (oemCBR, oemVBR);
+  TOGGSoundDataMode = (odmBytes, odmSamples);
+
+  { TOGGSoundAbstractEncDec }
+
+  TOGGSoundAbstractEncDec = class
+  protected
+    function GetBitdepth : Cardinal; virtual; abstract;
+    function GetBitrate : Cardinal; virtual; abstract;
+    function GetChannels : Cardinal; virtual; abstract;
+    function GetFrequency : Cardinal; virtual; abstract;
+    function GetVersion : Integer; virtual; abstract;
+
+    procedure SetBitdepth({%H-}AValue : Cardinal); virtual;
+    procedure SetBitrate({%H-}AValue : Cardinal); virtual;
+    procedure SetChannels({%H-}AValue : Cardinal); virtual;
+    procedure SetFrequency({%H-}AValue : Cardinal); virtual;
+
+    procedure Done; virtual; abstract;
+  public
+    function DataMode  : TOGGSoundDataMode; virtual; abstract;
+    function Comments : IOGGComment; virtual; abstract;
+    function InternalType : TOGGEncDecType; virtual; abstract;
+    function Ready : Boolean; virtual; abstract;
+
+    property Channels : Cardinal read GetChannels write SetChannels;
+    property Frequency : Cardinal read GetFrequency write SetFrequency;
+    property Bitrate : Cardinal read GetBitrate write SetBitrate;
+    property Bitdepth : Cardinal read GetBitdepth write SetBitdepth;
+    property Version : Integer read GetVersion;
+  end;
+
+  { TOGGSoundEncoder }
+
+  TOGGSoundEncoder = class(TOGGSoundAbstractEncDec)
+  protected
+    function GetMode : TOGGSoundEncoderMode; virtual; abstract;
+    function GetQuality : Single; virtual; abstract;
+    procedure SetMode({%H-}AValue : TOGGSoundEncoderMode); virtual;
+    procedure SetQuality({%H-}AValue : Single); virtual;
+
+    procedure Init(aMode : TOGGSoundEncoderMode;
+                   aChannels : Cardinal;
+                   aFreq, aBitrate, aBitdepth : Cardinal;
+                   aQuality : Single;
+                   aComments : IOGGComment); virtual; abstract;
+    //method to encode raw pcm data
+    function  WriteData({%H-}Buffer : Pointer; {%H-}Count : Integer; {%H-}Par : Pointer) : Integer; virtual;
+    //method to encode header/comments
+    procedure WriteHeader({%H-}Par : Pointer); virtual;
+    //method to close encoder (write last packet/flush/finalize encoder)
+    procedure Close({%H-}Par : Pointer); virtual;
+
+    //method to write encoded data
+    function DoWrite({%H-}Buffer : Pointer; {%H-}BufferSize : Integer) : Integer; virtual;
+  public
+    function InternalType : TOGGEncDecType; override;
+
+    property Quality : Single read GetQuality write SetQuality;
+    property Mode : TOGGSoundEncoderMode read GetMode write SetMode;
+  end;
+
+  { TOGGSoundDecoder }
+
+  TOGGSoundDecoder = class(TOGGSoundAbstractEncDec)
+  protected
+    procedure Init; virtual; abstract;
+
+    //method to read decoded data
+    function  ReadData({%H-}Buffer : Pointer; {%H-}Count : Integer; {%H-}Par : Pointer) : Integer; virtual;
+    //method to reset decoder
+    procedure ResetToStart; virtual;
+
+    //method to read encoded data from stream
+    function DoRead({%H-}_ptr : Pointer; {%H-}_nbytes : Integer) : Integer; virtual;
+    //method to seek in encoded stream
+    function DoSeek({%H-}_offset:Int64; {%H-}_whence:Integer): Integer; virtual;
+    //method to tell current position in encoded stream
+    function DoTell:Int64; virtual;
+  public
+    function InternalType : TOGGEncDecType; override;
+  end;
+
+
+  { TOGGSoundFile }
+
+  TOGGSoundFile = class
+  private
+    fStream: TStream;
+
+    //encoder/decoder spec
+    fEncDec : TOGGSoundAbstractEncDec;
+  protected
+    procedure Clean; virtual;
+    procedure WriteHeader; virtual;
+    function InitEncoder(aMode : TOGGSoundEncoderMode;
+                   aChannels : Cardinal;
+                   aFreq, aBitrate, aBitdepth : Cardinal;
+                   aQuality : Single;
+                   aComments : IOGGComment) : TOGGSoundEncoder; virtual;
+                                                                abstract;
+    function InitDecoder : TOGGSoundDecoder; virtual; abstract;
+  public
+    destructor Destroy; override;
+
+    function Stream : TStream; virtual;
+
+    function LoadFromFile(const aFileName : String; const aInMemory : Boolean
+      ) : Boolean; virtual;
+    function LoadFromStream(Str : TStream) : Boolean; virtual;
+    function ReadData(Buffer : Pointer; BufferSize : Integer; Ptr : Pointer) : Integer; virtual;
+    procedure ResetToStart; virtual;
+    function Decoder : TOGGSoundDecoder;
+    function DecoderReady : Boolean; virtual;
+
+    function SaveToFile(const aFileName : String;
+      amode : TOGGSoundEncoderMode;
+      achannels : Integer;
+      afreq, abitrate, abitdepth : Cardinal;
+      base_quality : Single;
+      aComments : IOGGComment) : Boolean; virtual;
+    function SaveToStream(Str : TStream;
+      amode : TOGGSoundEncoderMode;
+      achannels : Integer;
+      afreq, abitrate, abitdepth : Cardinal;
+      base_quality : Single;
+      aComments : IOGGComment) : Boolean; virtual;
+    function WriteSamples(Buffer : Pointer; Count : Integer; Ptr : Pointer
+      ) : Integer; virtual;
+    procedure StopStreaming; virtual;
+    function Encoder : TOGGSoundEncoder;
+    function EncoderReady : Boolean; virtual;
+
+    function SamplesToBytes(s : Integer) : Integer; virtual;
+    function BytesToSamples(b : Integer) : Integer; virtual;
+
+    function Frequency : Cardinal; virtual;
+    function Bitrate  : Cardinal; virtual;
+    function Bitdepth : Cardinal; virtual;
+    function Channels : Cardinal; virtual;
+    function Version  : Cardinal; virtual;
+  end;
+
   { TFastIOVecList }
 
   TFastIOVecList = class(specialize TFastBaseNumericList<ogg_iovec_t>)
@@ -194,15 +362,15 @@ type
     constructor Create;
   end;
 
-  { TOGGPage }
+  { TOGGRefPage }
 
-  TOGGPage = class(TInterfacedObject, IOGGPage)
+  TOGGRefPage = class(TInterfacedObject, IOGGPage)
   private
-    FRef : ogg_page;
+    FPRef : pogg_page;
   public
-    function Ref : pogg_page;
+    function Ref : pogg_page; inline;
 
-    constructor Create;
+    constructor Create(aRef : pogg_page);
 
     procedure ChecksumSet;
     function Version: integer;
@@ -215,31 +383,48 @@ type
     function Packets: integer;
   end;
 
-  { TOGGPacket }
+  { TOGGUniqPage }
 
-  TOGGPacket = class(TInterfacedObject, IOGGPacket)
+  TOGGUniqPage = class(TOGGRefPage)
   private
-    FRef : ogg_packet;
+    FRef : ogg_page;
   public
-    function Ref : pogg_packet;
-
     constructor Create;
+  end;
+
+  { TOGGRefPacket }
+
+  TOGGRefPacket = class(TInterfacedObject, IOGGPacket)
+  private
+    FPRef : pogg_packet;
+  public
+    function Ref : pogg_packet; inline;
+
+    constructor Create(aRef : pogg_packet);
 
     procedure Clear;
   end;
 
-  { TOGGStreamState }
+  { TOGGUniqPacket }
 
-  TOGGStreamState = class(TInterfacedObject, IOGGStreamState)
+  TOGGUniqPacket = class(TOGGRefPacket)
   private
-    FRef : ogg_stream_state;
+    FRef : ogg_packet;
+  public
+    constructor Create;
+  end;
+
+  { TOGGRefStreamState }
+
+  TOGGRefStreamState = class(TInterfacedObject, IOGGStreamState)
+  private
+    FPRef : pogg_stream_state;
     procedure Init(serialno: integer);
     procedure Done;
   public
-    function Ref : pogg_stream_state;
+    function Ref : pogg_stream_state; inline;
 
-    constructor Create(serialno : integer);
-    destructor Destroy; override;
+    constructor Create(aRef : pogg_stream_state);
 
     procedure Clear;
     procedure Reset;
@@ -264,18 +449,27 @@ type
     function PacketPeek(op: IOGGPacket): Boolean;
   end;
 
-  { TOGGSyncState }
+  { TOGGUniqStreamState }
 
-  TOGGSyncState = class(TInterfacedObject, IOGGSyncState)
+  TOGGUniqStreamState = class(TOGGRefStreamState)
   private
-    FRef : ogg_sync_state;
+    FRef : ogg_stream_state;
+  public
+    constructor Create(serialno : integer);
+    destructor Destroy; override;
+  end;
+
+  { TOGGRefSyncState }
+
+  TOGGRefSyncState = class(TInterfacedObject, IOGGSyncState)
+  private
+    FPRef : pogg_sync_state;
     function Init: integer;
     function Done: integer;
   public
-    function Ref : pogg_sync_state;
+    function Ref : pogg_sync_state; inline;
 
-    constructor Create;
-    destructor Destroy; override;
+    constructor Create(aRef : pogg_sync_state);
 
     function Clear: integer;
     function Reset: integer;
@@ -286,16 +480,26 @@ type
     function PageOut(og: IOGGPage): integer;
   end;
 
-  { TOGGPackBuffer }
+  { TOGGUniqSyncState }
 
-  TOGGPackBuffer = class(TInterfacedObject, IOGGPackBuffer)
+  TOGGUniqSyncState = class(TOGGRefSyncState)
   private
-    FRef : oggpack_buffer;
+    FRef : ogg_sync_state;
+  public
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+  { TOGGRefPackBuffer }
+
+  TOGGRefPackBuffer = class(TInterfacedObject, IOGGPackBuffer)
+  private
+    FPRef : poggpack_buffer;
     FEnd : TOGGEndian;
   public
-    function Ref : poggpack_buffer;
+    function Ref : poggpack_buffer; inline;
 
-    constructor Create(aEndian : TOGGEndian);
+    constructor Create(aRef : poggpack_buffer; aEndian : TOGGEndian);
 
     procedure SetEndianMode(e : TOGGEndian);
     function  GetEndianMode : TOGGEndian;
@@ -320,15 +524,29 @@ type
     function GetBuffer: pbyte;
   end;
 
+  { TOGGUniqPackBuffer }
+
+  TOGGUniqPackBuffer = class(TOGGRefPackBuffer)
+  private
+    FRef : oggpack_buffer;
+  public
+    constructor Create(aEndian : TOGGEndian);
+  end;
+
   { TOGG }
 
   TOGG = class
   public
     class function NewPackBuffer(aEndian : TOGGEndian) : IOGGPackBuffer;
+    class function RefPackBuffer(aRef : poggpack_buffer; aEndian : TOGGEndian) : IOGGPackBuffer;
     class function NewSyncState : IOGGSyncState;
+    class function RefSyncState(st : pogg_sync_state) : IOGGSyncState;
     class function NewStream(serialno : integer) : IOGGStreamState;
+    class function RefStream(st : pogg_stream_state) : IOGGStreamState;
     class function NewPacket : IOGGPacket;
+    class function RefPacket(st : pogg_packet) : IOGGPacket;
     class function NewPage : IOGGPage;
+    class function RefPage(st : pogg_page) : IOGGPage;
     class function NewIOVecListed : IOGGIOVec;
     class function NewIOVecStatic(aRef : pogg_iovec_t; aCount : integer;
                           aOwned : Boolean) : IOGGIOVec;
@@ -354,6 +572,363 @@ implementation
 const
   ERR_INSUF = 'Insufficient data has accumulated to fill a page, or an internal error occurred';
   ERR_INTERNAL = 'Internal error';
+
+{ TOGGSoundAbstractEncDec }
+
+procedure TOGGSoundAbstractEncDec.SetBitdepth(AValue : Cardinal);
+begin
+  //do nothing
+end;
+
+procedure TOGGSoundAbstractEncDec.SetBitrate(AValue : Cardinal);
+begin
+  //do nothing
+end;
+
+procedure TOGGSoundAbstractEncDec.SetChannels(AValue : Cardinal);
+begin
+  //do nothing
+end;
+
+procedure TOGGSoundAbstractEncDec.SetFrequency(AValue : Cardinal);
+begin
+  //do nothing
+end;
+
+{ TOGGSoundEncoder }
+
+procedure TOGGSoundEncoder.SetMode(AValue : TOGGSoundEncoderMode);
+begin
+  //do nothing
+end;
+
+procedure TOGGSoundEncoder.SetQuality(AValue : Single);
+begin
+  //do nothing
+end;
+
+function TOGGSoundEncoder.WriteData(Buffer : Pointer; Count : Integer;
+  Par : Pointer) : Integer;
+begin
+  Result := -1;
+end;
+
+procedure TOGGSoundEncoder.WriteHeader(Par : Pointer);
+begin
+  //do nothing
+end;
+
+procedure TOGGSoundEncoder.Close(Par : Pointer);
+begin
+  //do nothing
+end;
+
+function TOGGSoundEncoder.DoWrite(Buffer : Pointer; BufferSize : Integer
+  ) : Integer;
+begin
+  Result := -1;
+end;
+
+function TOGGSoundEncoder.InternalType : TOGGEncDecType;
+begin
+  Result := edtEncoder;
+end;
+
+{ TOGGSoundDecoder }
+
+function TOGGSoundDecoder.ReadData(Buffer : Pointer; Count : Integer;
+  Par : Pointer) : Integer;
+begin
+  Result := -1;
+end;
+
+procedure TOGGSoundDecoder.ResetToStart;
+begin
+  //do nothing
+end;
+
+function TOGGSoundDecoder.DoRead(_ptr : Pointer; _nbytes : Integer) : Integer;
+begin
+  Result := -1;
+end;
+
+function TOGGSoundDecoder.DoSeek(_offset : Int64; _whence : Integer) : Integer;
+begin
+  Result := -1;
+end;
+
+function TOGGSoundDecoder.DoTell : Int64;
+begin
+  Result := -1;
+end;
+
+function TOGGSoundDecoder.InternalType : TOGGEncDecType;
+begin
+  Result := edtDecoder;
+end;
+
+{ TOGGSoundFile }
+
+procedure TOGGSoundFile.Clean;
+begin
+  if Assigned(fEncDec) then
+    FreeAndNil(fEncDec);
+  if Assigned(fStream) then
+    FreeAndNil(fStream);
+end;
+
+procedure TOGGSoundFile.WriteHeader;
+begin
+  if EncoderReady then
+    Encoder.WriteHeader(nil);
+end;
+
+function TOGGSoundFile.SamplesToBytes(s : Integer) : Integer;
+begin
+  Result := (s * (Bitdepth div 8)) * Channels;
+end;
+
+function TOGGSoundFile.BytesToSamples(b : Integer) : Integer;
+begin
+  Result := (b div (Bitdepth div 8)) div Channels;
+end;
+
+destructor TOGGSoundFile.Destroy;
+begin
+  Clean;
+  inherited Destroy;
+end;
+
+function TOGGSoundFile.LoadFromFile(const aFileName : String;
+  const aInMemory : Boolean) : Boolean;
+var
+  cFilestream : TFileStream;
+  cStr : TStream;
+begin
+  if aInMemory then
+  begin
+    cFilestream := TFileStream.Create(aFileName, fmOpenRead);
+    if Assigned(cFilestream) then
+    begin
+      try
+        cStr := TMemoryStream.Create;
+        cStr.CopyFrom(cFilestream, cFilestream.Size);
+        cStr.Position := 0;
+      finally
+        cFilestream.Free;
+      end;
+    end else
+      cStr := nil;
+  end
+  else
+    cStr := TFileStream.Create(aFileName, fmOpenRead);
+
+  Result := LoadFromStream(cStr);
+end;
+
+function TOGGSoundFile.LoadFromStream(Str : TStream) : Boolean;
+begin
+  Clean;
+
+  fStream := Str;
+
+  try
+    fEncDec :=  InitDecoder;
+    Result := fEncDec.Ready;
+  except
+    on e : Exception do Result := false;
+  end;
+end;
+
+function TOGGSoundFile.ReadData(Buffer : Pointer; BufferSize : Integer;
+  Ptr : Pointer) : Integer;
+var
+  Size, Res, samples: Integer;
+begin
+  if Assigned(fStream) and DecoderReady then
+  begin
+    Size := 0;
+
+    if Decoder.DataMode = odmBytes then
+    begin
+      while (Size < BufferSize) do begin
+        Res := Decoder.ReadData(@(PByte(Buffer)[Size]),
+                                   BufferSize - Size,
+                                   Ptr);
+        if Res > 0 then inc(Size, Res) else break;
+      end;
+      Result := Size;
+    end else
+    begin
+      samples := BytesToSamples(BufferSize);
+      while (Size < samples) do begin
+        Res := Decoder.ReadData(@(PByte(Buffer)[SamplesToBytes(Size)]),
+                                   samples - Size,
+                                   Ptr);
+        if Res > 0 then inc(Size, Res) else break;
+      end;
+      Result := SamplesToBytes(Size);
+    end;
+  end else
+    Result := -1;
+end;
+
+procedure TOGGSoundFile.ResetToStart;
+begin
+  if DecoderReady then
+    Decoder.ResetToStart;
+end;
+
+function TOGGSoundFile.Decoder : TOGGSoundDecoder;
+begin
+  Result := TOGGSoundDecoder(fEncDec);
+end;
+
+function TOGGSoundFile.DecoderReady : Boolean;
+begin
+  Result := Assigned(fEncDec) and
+            (fEncDec.InternalType = edtDecoder) and
+            fEncDec.Ready;
+end;
+
+function TOGGSoundFile.Stream : TStream;
+begin
+  Result := fStream;
+end;
+
+function TOGGSoundFile.SaveToFile(const aFileName : String;
+  amode : TOGGSoundEncoderMode; achannels : Integer; afreq, abitrate,
+  abitdepth : Cardinal; base_quality : Single; aComments : IOGGComment
+  ) : Boolean;
+var
+  Str : TFileStream;
+begin
+  Str := TFileStream.Create(aFileName, fmOpenWrite or fmCreate);
+  if Assigned(Str) then
+    Result := SaveToStream(Str, amode, achannels, afreq,
+                                abitrate, abitdepth,
+                                base_quality, aComments) else
+      Result := false;
+end;
+
+function TOGGSoundFile.SaveToStream(Str : TStream;
+  amode : TOGGSoundEncoderMode; achannels : Integer; afreq, abitrate,
+  abitdepth : Cardinal; base_quality : Single; aComments : IOGGComment
+  ) : Boolean;
+begin
+  Clean;
+
+  fStream := Str;
+
+  try
+    try
+      fEncDec :=  InitEncoder(amode,achannels, afreq,
+                              abitrate, abitdepth,
+                              base_quality, aComments);
+      Result := fEncDec.Ready;
+    except
+      on e : Exception do Result := false;
+    end;
+  finally
+    if Result then
+      WriteHeader;
+  end;
+end;
+
+function TOGGSoundFile.WriteSamples(Buffer : Pointer;
+                                           Count : Integer;
+                                           Ptr : Pointer) : Integer;
+var
+  Size, Res, BuffCount : Integer;
+begin
+  if Assigned(fStream) and EncoderReady then
+  begin
+    if Count > 0 then
+    begin
+      Size := 0;
+
+      if Decoder.DataMode = odmBytes then
+      begin
+        BuffCount := SamplesToBytes(Count);
+        while Size < BuffCount do
+        begin
+          Res := Encoder.WriteData(@(PByte(Buffer)[Size]),
+                                   BuffCount - Size,
+                                   Ptr);
+          if Res <= 0 then Break;
+          Inc(Size, Res);
+        end;
+        Result := BytesToSamples(Size);
+      end else
+      begin
+        while Size < Count do
+        begin
+          Res := Encoder.WriteData(@(PByte(Buffer)[Size]),
+                                   Count - Size,
+                                   Ptr);
+          if Res <= 0 then Break;
+          Inc(Size, Res);
+        end;
+        Result := Size;
+      end;
+    end else
+      Result := 0;
+  end else
+    Result := -1;
+end;
+
+procedure TOGGSoundFile.StopStreaming;
+begin
+  if EncoderReady then
+     Encoder.Close(nil);
+end;
+
+function TOGGSoundFile.Encoder : TOGGSoundEncoder;
+begin
+  Result := TOGGSoundEncoder(fEncDec);
+end;
+
+function TOGGSoundFile.EncoderReady : Boolean;
+begin
+  Result := Assigned(fEncDec) and
+            (fEncDec.InternalType = edtEncoder) and
+            fEncDec.Ready;
+end;
+
+function TOGGSoundFile.Frequency : Cardinal;
+begin
+  if Assigned(fEncDec) then
+    Result := fEncDec.Frequency else
+    Result := 0;
+end;
+
+function TOGGSoundFile.Bitrate : Cardinal;
+begin
+  if Assigned(fEncDec) then
+    Result := fEncDec.Bitrate else
+    Result := 0;
+end;
+
+function TOGGSoundFile.Bitdepth : Cardinal;
+begin
+  if Assigned(fEncDec) then
+    Result := fEncDec.Bitdepth else
+    Result := 0;
+end;
+
+function TOGGSoundFile.Channels : Cardinal;
+begin
+  if Assigned(fEncDec) then
+    Result := fEncDec.Channels else
+    Result := 0;
+end;
+
+function TOGGSoundFile.Version : Cardinal;
+begin
+  if Assigned(fEncDec) then
+    Result := fEncDec.Version else
+    Result := 0;
+end;
 
 { EOGGException }
 
@@ -447,27 +1022,53 @@ end;
 
 class function TOGG.NewPackBuffer(aEndian : TOGGEndian) : IOGGPackBuffer;
 begin
-  Result := TOGGPackBuffer.Create(aEndian) as IOGGPackBuffer;
+  Result := TOGGUniqPackBuffer.Create(aEndian) as IOGGPackBuffer;
+end;
+
+class function TOGG.RefPackBuffer(aRef : poggpack_buffer; aEndian : TOGGEndian
+  ) : IOGGPackBuffer;
+begin
+  Result := TOGGRefPackBuffer.Create(aRef, aEndian) as IOGGPackBuffer;
 end;
 
 class function TOGG.NewSyncState : IOGGSyncState;
 begin
-  Result := TOGGSyncState.Create as IOGGSyncState;
+  Result := TOGGUniqSyncState.Create as IOGGSyncState;
+end;
+
+class function TOGG.RefSyncState(st : pogg_sync_state) : IOGGSyncState;
+begin
+  Result := TOGGRefSyncState.Create(st) as IOGGSyncState;
 end;
 
 class function TOGG.NewStream(serialno : integer) : IOGGStreamState;
 begin
-  Result := TOGGStreamState.Create(serialno) as IOGGStreamState;
+  Result := TOGGUniqStreamState.Create(serialno) as IOGGStreamState;
+end;
+
+class function TOGG.RefStream(st : pogg_stream_state) : IOGGStreamState;
+begin
+  Result := TOGGRefStreamState.Create(st) as IOGGStreamState;
 end;
 
 class function TOGG.NewPacket : IOGGPacket;
 begin
-  Result := TOGGPacket.Create() as IOGGPacket;
+  Result := TOGGUniqPacket.Create() as IOGGPacket;
+end;
+
+class function TOGG.RefPacket(st : pogg_packet) : IOGGPacket;
+begin
+  Result := TOGGRefPacket.Create(st) as IOGGPacket;
 end;
 
 class function TOGG.NewPage : IOGGPage;
 begin
-  Result := TOGGPage.Create() as IOGGPage;
+  Result := TOGGUniqPage.Create() as IOGGPage;
+end;
+
+class function TOGG.RefPage(st : pogg_page) : IOGGPage;
+begin
+  Result := TOGGRefPage.Create(st) as IOGGPage;
 end;
 
 class function TOGG.NewIOVecListed : IOGGIOVec;
@@ -526,29 +1127,30 @@ begin
      Result := 1;
 end;
 
-{ TOGGPackBuffer }
+{ TOGGRefPackBuffer }
 
-function TOGGPackBuffer.Ref : poggpack_buffer;
+function TOGGRefPackBuffer.Ref : poggpack_buffer;
 begin
-  Result := @FRef;
+  Result := FPRef;
 end;
 
-constructor TOGGPackBuffer.Create(aEndian : TOGGEndian);
+constructor TOGGRefPackBuffer.Create( aRef : poggpack_buffer; aEndian : TOGGEndian);
 begin
+  FPRef := aRef;
   FEnd := aEndian;
 end;
 
-procedure TOGGPackBuffer.SetEndianMode(e : TOGGEndian);
+procedure TOGGRefPackBuffer.SetEndianMode(e : TOGGEndian);
 begin
   FEnd := e;
 end;
 
-function TOGGPackBuffer.GetEndianMode : TOGGEndian;
+function TOGGRefPackBuffer.GetEndianMode : TOGGEndian;
 begin
   Result := Fend;
 end;
 
-procedure TOGGPackBuffer.WriteInit;
+procedure TOGGRefPackBuffer.WriteInit;
 begin
   case Fend of
     oggeLE: oggpack_writeinit(Ref);
@@ -556,7 +1158,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.WriteCheck : integer;
+function TOGGRefPackBuffer.WriteCheck : integer;
 begin
   case Fend of
     oggeLE: Result := oggpack_writecheck(Ref);
@@ -564,7 +1166,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.WriteTrunc(bits : longint);
+procedure TOGGRefPackBuffer.WriteTrunc(bits : longint);
 begin
   case Fend of
     oggeLE: oggpack_writetrunc(Ref, bits);
@@ -572,7 +1174,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.WriteAlign;
+procedure TOGGRefPackBuffer.WriteAlign;
 begin
   case Fend of
     oggeLE: oggpack_writealign(Ref);
@@ -580,7 +1182,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.WriteCopy(source : pointer; bits : longint);
+procedure TOGGRefPackBuffer.WriteCopy(source : pointer; bits : longint);
 begin
   case Fend of
     oggeLE: oggpack_writecopy(Ref, source, bits);
@@ -588,7 +1190,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.Reset;
+procedure TOGGRefPackBuffer.Reset;
 begin
   case Fend of
     oggeLE:  oggpack_reset(Ref);
@@ -596,7 +1198,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.WriteClear;
+procedure TOGGRefPackBuffer.WriteClear;
 begin
   case Fend of
     oggeLE:  oggpack_writeclear(Ref);
@@ -604,7 +1206,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.ReadInit(buf : pbyte; bytes : integer);
+procedure TOGGRefPackBuffer.ReadInit(buf : pbyte; bytes : integer);
 begin
   case Fend of
     oggeLE:  oggpack_readinit(Ref, buf, bytes);
@@ -612,7 +1214,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.Write(value : cardinal; bits : integer);
+procedure TOGGRefPackBuffer.Write(value : cardinal; bits : integer);
 begin
   case Fend of
     oggeLE:  oggpack_write(Ref, value, bits);
@@ -620,7 +1222,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.Look(bits : integer) : longint;
+function TOGGRefPackBuffer.Look(bits : integer) : longint;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_look(Ref, bits);
@@ -628,7 +1230,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.Look1bit : longint;
+function TOGGRefPackBuffer.Look1bit : longint;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_look1(Ref);
@@ -636,7 +1238,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.Adv(bits : integer);
+procedure TOGGRefPackBuffer.Adv(bits : integer);
 begin
   case Fend of
     oggeLE:  oggpack_adv(Ref, bits);
@@ -644,7 +1246,7 @@ begin
   end;
 end;
 
-procedure TOGGPackBuffer.Adv1bit;
+procedure TOGGRefPackBuffer.Adv1bit;
 begin
   case Fend of
     oggeLE:  oggpack_adv1(Ref);
@@ -652,7 +1254,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.Read(bits : integer) : longint;
+function TOGGRefPackBuffer.Read(bits : integer) : longint;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_read(Ref, bits);
@@ -660,7 +1262,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.Read1 : longint;
+function TOGGRefPackBuffer.Read1 : longint;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_read1(Ref);
@@ -668,7 +1270,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.Bytes : longint;
+function TOGGRefPackBuffer.Bytes : longint;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_bytes(Ref);
@@ -676,7 +1278,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.Bits : longint;
+function TOGGRefPackBuffer.Bits : longint;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_bits(Ref);
@@ -684,7 +1286,7 @@ begin
   end;
 end;
 
-function TOGGPackBuffer.GetBuffer : pbyte;
+function TOGGRefPackBuffer.GetBuffer : pbyte;
 begin
   case Fend of
     oggeLE: Result :=  oggpack_get_buffer(Ref);
@@ -692,73 +1294,88 @@ begin
   end;
 end;
 
-{ TOGGSyncState }
+{ TOGGUniqPackBuffer }
 
-function TOGGSyncState.Init : integer;
+constructor TOGGUniqPackBuffer.Create(aEndian : TOGGEndian);
+begin
+  inherited Create(@FRef, aEndian);
+end;
+
+{ TOGGRefSyncState }
+
+function TOGGRefSyncState.Init : integer;
 begin
   Result := ogg_sync_init(Ref);
 end;
 
-function TOGGSyncState.Done : integer;
+function TOGGRefSyncState.Done : integer;
 begin
   Result := ogg_sync_clear(Ref);
 end;
 
-function TOGGSyncState.Ref : pogg_sync_state;
+function TOGGRefSyncState.Ref : pogg_sync_state;
 begin
-  Result := @FRef;
+  Result := FPRef;
 end;
 
-constructor TOGGSyncState.Create;
+constructor TOGGRefSyncState.Create(aRef : pogg_sync_state);
+begin
+  FPRef := aRef;
+end;
+
+function TOGGRefSyncState.Clear : integer;
+begin
+   Result := ogg_sync_clear(Ref);
+end;
+
+function TOGGRefSyncState.Reset : integer;
+begin
+  Result := ogg_sync_reset(Ref);
+end;
+
+function TOGGRefSyncState.Check : integer;
+begin
+  Result := ogg_sync_check(Ref);
+end;
+
+function TOGGRefSyncState.Buffer(size : longint) : pointer;
+begin
+  Result := ogg_sync_buffer(Ref, size);
+end;
+
+function TOGGRefSyncState.Wrote(bytes : longint) : integer;
+begin
+  Result := ogg_sync_wrote(Ref, bytes);
+end;
+
+function TOGGRefSyncState.PageSeek(og : IOGGPage) : longint;
+begin
+  Result := ogg_sync_pageseek(Ref, og.Ref);
+end;
+
+function TOGGRefSyncState.PageOut(og : IOGGPage) : integer;
+begin
+  Result := ogg_sync_pageout(Ref, og.Ref);
+end;
+
+{ TOGGUniqSyncState }
+
+constructor TOGGUniqSyncState.Create;
 begin
   FillByte(FRef, Sizeof(FRef), 0);
+  inherited Create(@FRef);
   Init;
 end;
 
-destructor TOGGSyncState.Destroy;
+destructor TOGGUniqSyncState.Destroy;
 begin
   Done;
   inherited Destroy;
 end;
 
-function TOGGSyncState.Clear : integer;
-begin
-   Result := ogg_sync_clear(Ref);
-end;
+{ TOGGRefStreamState }
 
-function TOGGSyncState.Reset : integer;
-begin
-  Result := ogg_sync_reset(Ref);
-end;
-
-function TOGGSyncState.Check : integer;
-begin
-  Result := ogg_sync_check(Ref);
-end;
-
-function TOGGSyncState.Buffer(size : longint) : pointer;
-begin
-  Result := ogg_sync_buffer(Ref, size);
-end;
-
-function TOGGSyncState.Wrote(bytes : longint) : integer;
-begin
-  Result := ogg_sync_wrote(Ref, bytes);
-end;
-
-function TOGGSyncState.PageSeek(og : IOGGPage) : longint;
-begin
-  Result := ogg_sync_pageseek(Ref, og.Ref);
-end;
-
-function TOGGSyncState.PageOut(og : IOGGPage) : integer;
-begin
-  Result := ogg_sync_pageout(Ref, og.Ref);
-end;
-
-{ TOGGStreamState }
-
-procedure TOGGStreamState.Init(serialno : integer);
+procedure TOGGRefStreamState.Init(serialno : integer);
 var R : Integer;
 begin
   R := ogg_stream_init(Ref, serialno);
@@ -766,34 +1383,27 @@ begin
     raise EOGGException.Create;
 end;
 
-procedure TOGGStreamState.Done;
+procedure TOGGRefStreamState.Done;
 begin
   ogg_stream_clear(Ref);
 end;
 
-function TOGGStreamState.Ref : pogg_stream_state;
+function TOGGRefStreamState.Ref : pogg_stream_state;
 begin
-  Result := @FRef;
+  Result := FPRef;
 end;
 
-constructor TOGGStreamState.Create(serialno : integer);
+constructor TOGGRefStreamState.Create(aRef : pogg_stream_state);
 begin
-  FillByte(FRef, sizeof(FRef), 0);
-  Init(serialno);
+  FPRef := aRef;
 end;
 
-destructor TOGGStreamState.Destroy;
-begin
-  Done;
-  inherited Destroy;
-end;
-
-procedure TOGGStreamState.Clear;
+procedure TOGGRefStreamState.Clear;
 begin
    ogg_stream_clear(Ref);
 end;
 
-procedure TOGGStreamState.Reset;
+procedure TOGGRefStreamState.Reset;
 var R : Integer;
 begin
   R := ogg_stream_reset(Ref);
@@ -801,22 +1411,22 @@ begin
     raise EOGGException.Create;
 end;
 
-function TOGGStreamState.ResetSerialNo(serialno : integer) : integer;
+function TOGGRefStreamState.ResetSerialNo(serialno : integer) : integer;
 begin
   Result := ogg_stream_reset_serialno(Ref, serialno);
 end;
 
-function TOGGStreamState.Check : Boolean;
+function TOGGRefStreamState.Check : Boolean;
 begin
   Result := ogg_stream_check(Ref) = 0;
 end;
 
-function TOGGStreamState.EoS : Boolean;
+function TOGGRefStreamState.EoS : Boolean;
 begin
   Result := ogg_stream_eos(Ref) <> 0;
 end;
 
-procedure TOGGStreamState.PacketIn(op : IOGGPacket);
+procedure TOGGRefStreamState.PacketIn(op : IOGGPacket);
 var R : Integer;
 begin
   R := ogg_stream_packetin(Ref, op.Ref);
@@ -824,7 +1434,7 @@ begin
     raise EOGGException.Create;
 end;
 
-procedure TOGGStreamState.IOVecIn(iov : IOGGIOVec; e_o_s : Boolean;
+procedure TOGGRefStreamState.IOVecIn(iov : IOGGIOVec; e_o_s : Boolean;
   granulepos : ogg_int64_t);
 var R : Integer;
 begin
@@ -833,24 +1443,24 @@ begin
     raise EOGGException.Create;
 end;
 
-function TOGGStreamState.PageOutNew : IOGGPage;
+function TOGGRefStreamState.PageOutNew : IOGGPage;
 begin
   Result := TOGG.NewPage;
   if not PageOut(Result) then
     raise EOGGException.Create(ERR_INSUF);
 end;
 
-function TOGGStreamState.PageOut(og : IOGGPage) : Boolean;
+function TOGGRefStreamState.PageOut(og : IOGGPage) : Boolean;
 begin
   Result := ogg_stream_pageout(Ref, og.Ref) <> 0;
 end;
 
-function TOGGStreamState.PageOutFill(og : IOGGPage; nfill : integer) : Boolean;
+function TOGGRefStreamState.PageOutFill(og : IOGGPage; nfill : integer) : Boolean;
 begin
   Result := ogg_stream_pageout_fill(Ref, og.Ref, nfill) <> 0;
 end;
 
-procedure TOGGStreamState.PageOutToStream(aStr : TStream);
+procedure TOGGRefStreamState.PageOutToStream(aStr : TStream);
 var og : IOGGPage;
 begin
   og := PageOutNew;
@@ -858,7 +1468,7 @@ begin
   aStr.Write(og.Ref^.body^, og.Ref^.body_len);
 end;
 
-procedure TOGGStreamState.PagesOutToStream(aStr : TStream);
+procedure TOGGRefStreamState.PagesOutToStream(aStr : TStream);
 var og : IOGGPage;
 begin
   og := TOGG.NewPage;
@@ -869,23 +1479,23 @@ begin
   end;
 end;
 
-procedure TOGGStreamState.SavePacketToStream(aStr : TStream; op : IOGGPacket);
+procedure TOGGRefStreamState.SavePacketToStream(aStr : TStream; op : IOGGPacket);
 begin
   PacketIn(op);
   PagesOutToStream(aStr);
 end;
 
-function TOGGStreamState.Flush(og : IOGGPage) : Boolean;
+function TOGGRefStreamState.Flush(og : IOGGPage) : Boolean;
 begin
   Result := ogg_stream_flush(Ref, og.Ref) <> 0;
 end;
 
-function TOGGStreamState.FlushFill(og : IOGGPage; nfill : integer) : Boolean;
+function TOGGRefStreamState.FlushFill(og : IOGGPage; nfill : integer) : Boolean;
 begin
   Result := ogg_stream_flush_fill(Ref, og.Ref, nfill) <> 0;
 end;
 
-procedure TOGGStreamState.PageIn(og : IOGGPage);
+procedure TOGGRefStreamState.PageIn(og : IOGGPage);
 var R : Integer;
 begin
   R := ogg_stream_pagein(Ref, og.Ref);
@@ -893,7 +1503,7 @@ begin
     raise EOGGException.Create;
 end;
 
-function TOGGStreamState.PacketOut(op : IOGGPacket) : Boolean;
+function TOGGRefStreamState.PacketOut(op : IOGGPacket) : Boolean;
 var R : Integer;
 begin
   R := ogg_stream_packetout(Ref, op.Ref);
@@ -904,7 +1514,7 @@ begin
     Exit(False);
 end;
 
-function TOGGStreamState.PacketPeek(op : IOGGPacket) : Boolean;
+function TOGGRefStreamState.PacketPeek(op : IOGGPacket) : Boolean;
 var R : Integer;
 begin
   R := ogg_stream_packetpeek(Ref, op.Ref);
@@ -915,78 +1525,109 @@ begin
     Exit(False);
 end;
 
-{ TOGGPacket }
+{ TOGGUniqStreamState }
 
-function TOGGPacket.Ref : pogg_packet;
+constructor TOGGUniqStreamState.Create(serialno : integer);
 begin
-  Result := @FRef;
+  FillByte(FRef, sizeof(FRef), 0);
+  inherited Create(@FRef);
+  Init(serialno);
 end;
 
-constructor TOGGPacket.Create;
+destructor TOGGUniqStreamState.Destroy;
+begin
+  Done;
+  inherited Destroy;
+end;
+
+{ TOGGRefPacket }
+
+function TOGGRefPacket.Ref : pogg_packet;
+begin
+  Result := FPRef;
+end;
+
+constructor TOGGRefPacket.Create(aRef : pogg_packet);
+begin
+  FPRef := aRef;
+end;
+
+procedure TOGGRefPacket.Clear;
+begin
+  ogg_packet_clear(FPRef);
+end;
+
+{ TOGGUniqPacket }
+
+constructor TOGGUniqPacket.Create;
+begin
+  FillByte(FRef, Sizeof(FRef), 0);
+  inherited Create(@FRef);
+end;
+
+{ TOGGRefPage }
+
+function TOGGRefPage.Ref : pogg_page;
+begin
+  Result := FPRef;
+end;
+
+constructor TOGGRefPage.Create(aRef : pogg_page);
+begin
+  FPRef := aRef;
+end;
+
+procedure TOGGRefPage.ChecksumSet;
+begin
+  ogg_page_checksum_set(FPRef);
+end;
+
+function TOGGRefPage.Version : integer;
+begin
+  Result := ogg_page_version(FPRef);
+end;
+
+function TOGGRefPage.Continued : Boolean;
+begin
+  Result := ogg_page_continued(FPRef) > 0;
+end;
+
+function TOGGRefPage.BoS : Boolean;
+begin
+  Result := ogg_page_bos(FPRef) > 0;
+end;
+
+function TOGGRefPage.EoS : Boolean;
+begin
+  Result := ogg_page_eos(FPRef) > 0;
+end;
+
+function TOGGRefPage.GranulePos : ogg_int64_t;
+begin
+  Result := ogg_page_granulepos(FPRef);
+end;
+
+function TOGGRefPage.SerialNo : integer;
+begin
+  Result := ogg_page_serialno(FPRef);
+end;
+
+function TOGGRefPage.PageNo : longint;
+begin
+  Result := ogg_page_pageno(FPRef);
+end;
+
+function TOGGRefPage.Packets : integer;
+begin
+  Result := ogg_page_packets(FPRef);
+end;
+
+{ TOGGUniqPage }
+
+constructor TOGGUniqPage.Create;
 begin
   FillByte(FRef, SizeOf(FRef), 0);
-end;
-
-procedure TOGGPacket.Clear;
-begin
-  ogg_packet_clear(Ref);
-end;
-
-{ TOGGPage }
-
-function TOGGPage.Ref : pogg_page;
-begin
-  Result := @FRef;
-end;
-
-constructor TOGGPage.Create;
-begin
-  FillByte(FRef, SizeOf(FRef), 0);
-end;
-
-procedure TOGGPage.ChecksumSet;
-begin
-  ogg_page_checksum_set(Ref);
-end;
-
-function TOGGPage.Version : integer;
-begin
-  Result := ogg_page_version(Ref);
-end;
-
-function TOGGPage.Continued : Boolean;
-begin
-  Result := ogg_page_continued(Ref) > 0;
-end;
-
-function TOGGPage.BoS : Boolean;
-begin
-  Result := ogg_page_bos(Ref) > 0;
-end;
-
-function TOGGPage.EoS : Boolean;
-begin
-  Result := ogg_page_eos(Ref) > 0;
-end;
-
-function TOGGPage.GranulePos : ogg_int64_t;
-begin
-  Result := ogg_page_granulepos(Ref);
-end;
-
-function TOGGPage.SerialNo : integer;
-begin
-  Result := ogg_page_serialno(Ref);
-end;
-
-function TOGGPage.PageNo : longint;
-begin
-  Result := ogg_page_pageno(Ref);
-end;
-
-function TOGGPage.Packets : integer;
-begin
-  Result := ogg_page_packets(Ref);
+  inherited Create(@FRef);
 end;
 
 { TOGGIOVecListed }

@@ -3,12 +3,16 @@
   <Package Version="5">
     <Name Value="libogg_ilya2ik"/>
     <Type Value="RunAndDesignTime"/>
+    <Author Value="Ilya Medvedkov"/>
     <CompilerOptions>
       <Version Value="11"/>
       <SearchPaths>
         <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
+    <Description Value="Free pascal wrapper around OGG library"/>
+    <License Value="LGPL v3.0"/>
+    <Version Minor="9"/>
     <Files>
       <Item>
         <Filename Value="libogg_dynlite.pas"/>
