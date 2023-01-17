@@ -79,7 +79,9 @@ type
     function FlushFill(og: IOGGPage; nfill: integer): Boolean;
 
     procedure PageIn(og: IOGGPage);
+    function PageInIgnoreErrors(og: IOGGPage): Integer;
     function PacketOut(op: IOGGPacket): Boolean;
+    function PacketOutIgnoreErrors(op: IOGGPacket): Integer;
     function PacketPeek(op: IOGGPacket): Boolean;
   end;
 
@@ -197,17 +199,20 @@ type
                    aFreq, aBitrate, aBitdepth : Cardinal;
                    aQuality : Single;
                    aComments : IOGGComment); virtual; abstract;
+
+    //method to write encoded data
+    function DoWrite({%H-}Buffer : Pointer; {%H-}BufferSize : Integer) : Integer; virtual;
+  public
+    function InternalType : TOGGEncDecType; override;
+
     //method to encode raw pcm data
     function  WriteData({%H-}Buffer : Pointer; {%H-}Count : Integer; {%H-}Par : Pointer) : Integer; virtual;
     //method to encode header/comments
     procedure WriteHeader({%H-}Par : Pointer); virtual;
     //method to close encoder (write last packet/flush/finalize encoder)
     procedure Close({%H-}Par : Pointer); virtual;
-
-    //method to write encoded data
-    function DoWrite({%H-}Buffer : Pointer; {%H-}BufferSize : Integer) : Integer; virtual;
-  public
-    function InternalType : TOGGEncDecType; override;
+    //method to flush encoder (write last packet/flush encoder)
+    procedure Flush({%H-}Par : Pointer); virtual;
 
     property Quality : Single read GetQuality write SetQuality;
     property Mode : TOGGSoundEncoderMode read GetMode write SetMode;
@@ -219,11 +224,6 @@ type
   protected
     procedure Init; virtual; abstract;
 
-    //method to read decoded data
-    function  ReadData({%H-}Buffer : Pointer; {%H-}Count : Integer; {%H-}Par : Pointer) : Integer; virtual;
-    //method to reset decoder
-    procedure ResetToStart; virtual;
-
     //method to read encoded data from stream
     function DoRead({%H-}_ptr : Pointer; {%H-}_nbytes : Integer) : Integer; virtual;
     //method to seek in encoded stream
@@ -231,6 +231,11 @@ type
     //method to tell current position in encoded stream
     function DoTell:Int64; virtual;
   public
+    //method to read decoded data
+    function  ReadData({%H-}Buffer : Pointer; {%H-}Count : Integer; {%H-}Par : Pointer) : Integer; virtual;
+    //method to reset decoder
+    procedure ResetToStart; virtual;
+
     function InternalType : TOGGEncDecType; override;
   end;
 
@@ -445,7 +450,9 @@ type
     function FlushFill(og: IOGGPage; nfill: integer): Boolean;
 
     procedure PageIn(og: IOGGPage);
+    function PageInIgnoreErrors(og: IOGGPage): Integer;
     function PacketOut(op: IOGGPacket): Boolean;
+    function PacketOutIgnoreErrors(op: IOGGPacket): Integer;
     function PacketPeek(op: IOGGPacket): Boolean;
   end;
 
@@ -619,6 +626,11 @@ begin
 end;
 
 procedure TOGGSoundEncoder.Close(Par : Pointer);
+begin
+  //do nothing
+end;
+
+procedure TOGGSoundEncoder.Flush(Par : Pointer);
 begin
   //do nothing
 end;
@@ -1503,15 +1515,25 @@ begin
     raise EOGGException.Create;
 end;
 
+function TOGGRefStreamState.PageInIgnoreErrors(og : IOGGPage) : Integer;
+begin
+  Result := ogg_stream_pagein(Ref, og.Ref);
+end;
+
 function TOGGRefStreamState.PacketOut(op : IOGGPacket) : Boolean;
 var R : Integer;
 begin
   R := ogg_stream_packetout(Ref, op.Ref);
   if R = 1 then
     Exit(True) else
-  if R = 0 then
+  if R < 0 then
     raise EOGGException.Create else
     Exit(False);
+end;
+
+function TOGGRefStreamState.PacketOutIgnoreErrors(op : IOGGPacket) : Integer;
+begin
+  Result := ogg_stream_packetout(Ref, op.Ref);
 end;
 
 function TOGGRefStreamState.PacketPeek(op : IOGGPacket) : Boolean;
@@ -1520,7 +1542,7 @@ begin
   R := ogg_stream_packetpeek(Ref, op.Ref);
   if R = 1 then
     Exit(True) else
-  if R = 0 then
+  if R < 0 then
     raise EOGGException.Create else
     Exit(False);
 end;
