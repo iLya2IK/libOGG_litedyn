@@ -25,6 +25,9 @@
     </Files>
     <RequiredPkgs>
       <Item>
+        <PackageName Value="soundutils_ilya2ik"/>
+      </Item>
+      <Item>
         <PackageName Value="commonutils_ilya2ik"/>
       </Item>
       <Item>
