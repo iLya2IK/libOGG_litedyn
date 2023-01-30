@@ -20,10 +20,6 @@ uses
   OGLSoundUtilTypes;
 
 type
-  IOGGComment = interface (ISoundComment)
-    ['{6156E58F-577D-4C31-B348-4A05B0A10336}']
-  end;
-
   IOGGIOVec = interface(IUnknown)
     ['{0D1EB404-D501-450F-A463-58A25EC60974}']
     function Ref : pogg_iovec_t;
