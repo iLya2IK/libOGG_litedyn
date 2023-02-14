@@ -69,10 +69,13 @@ type
     procedure IOVecIn(iov: IOGGIOVec; e_o_s: Boolean;
                           granulepos: ogg_int64_t);
     function PageOutNew : IOGGPage;
+    function PageFlushNew : IOGGPage;
     function PageOut(og: IOGGPage) : Boolean;
     function PageOutFill(og: IOGGPage; nfill: integer) : Boolean;
     procedure PageOutToStream(aStr : TStream);
+    procedure PageFlushToStream(aStr : TStream);
     procedure PagesOutToStream(aStr : TStream);
+    procedure PagesFlushToStream(aStr : TStream);
     procedure SavePacketToStream(aStr : TStream; op: IOGGPacket);
     function Flush(og: IOGGPage): Boolean;
     function FlushFill(og: IOGGPage; nfill: integer): Boolean;
@@ -269,10 +272,13 @@ type
     procedure IOVecIn(iov: IOGGIOVec; e_o_s: Boolean;
                           granulepos: ogg_int64_t);
     function PageOutNew : IOGGPage;
+    function PageFlushNew : IOGGPage;
     function PageOut(og: IOGGPage) : Boolean;
     function PageOutFill(og: IOGGPage; nfill: integer) : Boolean;
     procedure PageOutToStream(aStr : TStream);
+    procedure PageFlushToStream(aStr : TStream);
     procedure PagesOutToStream(aStr : TStream);
+    procedure PagesFlushToStream(aStr : TStream);
     procedure SavePacketToStream(aStr : TStream; op: IOGGPacket);
     function Flush(og: IOGGPage): Boolean;
     function FlushFill(og: IOGGPage; nfill: integer): Boolean;
@@ -928,6 +934,13 @@ begin
     raise EOGGException.Create(ERR_INSUF);
 end;
 
+function TOGGRefStreamState.PageFlushNew : IOGGPage;
+begin
+  Result := TOGG.NewPage;
+  if not Flush(Result) then
+    raise EOGGException.Create(ERR_INSUF);
+end;
+
 function TOGGRefStreamState.PageOut(og : IOGGPage) : Boolean;
 begin
   Result := ogg_stream_pageout(Ref, og.Ref) <> 0;
@@ -946,11 +959,30 @@ begin
   aStr.Write(og.Ref^.body^, og.Ref^.body_len);
 end;
 
+procedure TOGGRefStreamState.PageFlushToStream(aStr : TStream);
+var og : IOGGPage;
+begin
+  og := PageFlushNew;
+  aStr.Write(og.Ref^.header^, og.Ref^.header_len);
+  aStr.Write(og.Ref^.body^, og.Ref^.body_len);
+end;
+
 procedure TOGGRefStreamState.PagesOutToStream(aStr : TStream);
 var og : IOGGPage;
 begin
   og := TOGG.NewPage;
   while PageOut(og) do
+  begin
+    aStr.Write(og.Ref^.header^, og.Ref^.header_len);
+    aStr.Write(og.Ref^.body^, og.Ref^.body_len);
+  end;
+end;
+
+procedure TOGGRefStreamState.PagesFlushToStream(aStr : TStream);
+var og : IOGGPage;
+begin
+  og := TOGG.NewPage;
+  while Flush(og) do
   begin
     aStr.Write(og.Ref^.header^, og.Ref^.header_len);
     aStr.Write(og.Ref^.body^, og.Ref^.body_len);
