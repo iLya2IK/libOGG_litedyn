@@ -43,11 +43,34 @@ type
     function Packets: integer;
   end;
 
+  { IOGGPacket }
+
   IOGGPacket = interface(IUnknown)
     ['{4AEE539D-9B8C-4E63-A624-F1A79CC861D8}']
     function Ref : pogg_packet;
 
+    function GetBOS : Boolean;
+    function GetData : Pointer;
+    function GetEOS : Boolean;
+    function GetGranulePos : Int64;
+    function GetPacketNum : Int64;
+    function GetSize : Int64;
+
+    procedure SetBOS(AValue : Boolean);
+    procedure SetData(AValue : Pointer);
+    procedure SetEOS(AValue : Boolean);
+    procedure SetGranulePos(AValue : Int64);
+    procedure SetPacketNum(AValue : Int64);
+    procedure SetSize(AValue : Int64);
+
     procedure Clear;
+
+    property GranulePos : Int64 read GetGranulePos write SetGranulePos;
+    property PacketNum : Int64 read GetPacketNum write SetPacketNum;
+    property Size : Int64 read GetSize write SetSize;
+    property Data : Pointer read GetData write SetData;
+    property EOS : Boolean read GetEOS write SetEOS;
+    property BOS : Boolean read GetBOS write SetBOS;
   end;
 
   { IOGGStreamState }
@@ -233,6 +256,20 @@ type
   TOGGRefPacket = class(TInterfacedObject, IOGGPacket)
   private
     FPRef : pogg_packet;
+  protected
+    function GetBOS : Boolean;
+    function GetData : Pointer;
+    function GetEOS : Boolean;
+    function GetGranulePos : Int64;
+    function GetPacketNum : Int64;
+    function GetSize : Int64;
+
+    procedure SetBOS(AValue : Boolean);
+    procedure SetData(AValue : Pointer);
+    procedure SetEOS(AValue : Boolean);
+    procedure SetGranulePos(AValue : Int64);
+    procedure SetPacketNum(AValue : Int64);
+    procedure SetSize(AValue : Int64);
   public
     function Ref : pogg_packet; inline;
 
@@ -384,7 +421,15 @@ type
     class function RefSyncState(st : pogg_sync_state) : IOGGSyncState;
     class function NewStream(serialno : integer) : IOGGStreamState;
     class function RefStream(st : pogg_stream_state) : IOGGStreamState;
-    class function NewPacket : IOGGPacket;
+    class function NewPacket : IOGGPacket; overload;
+    class function NewPacket(data : Pointer; sz, num, granule : Int64;
+                                  isEOS, isBOS : Boolean) : IOGGPacket; overload;
+    class function NewPacket(data : Pointer; sz, num,
+                                  granule : Int64) : IOGGPacket; overload;
+    class function NewEOSPacket(data : Pointer;
+                                  sz, num, granule : Int64) : IOGGPacket;
+    class function NewBOSPacket(data : Pointer;
+                                  sz, num, granule : Int64) : IOGGPacket;
     class function RefPacket(st : pogg_packet) : IOGGPacket;
     class function NewPage : IOGGPage;
     class function RefPage(st : pogg_page) : IOGGPage;
@@ -538,6 +583,36 @@ end;
 class function TOGG.NewPacket : IOGGPacket;
 begin
   Result := TOGGUniqPacket.Create() as IOGGPacket;
+end;
+
+class function TOGG.NewPacket(data : Pointer; sz, num, granule : Int64; isEOS,
+  isBOS : Boolean) : IOGGPacket;
+begin
+  Result := TOGG.NewPacket;
+  Result.Data := data;
+  Result.Size := sz;
+  Result.GranulePos := granule;
+  Result.PacketNum := num;
+  Result.BOS := isBOS;
+  Result.EOS := isEOS;
+end;
+
+class function TOGG.NewPacket(data : Pointer; sz, num, granule : Int64
+  ) : IOGGPacket;
+begin
+  Result := TOGG.NewPacket(data, sz, num, granule, false, false);
+end;
+
+class function TOGG.NewEOSPacket(data : Pointer; sz, num, granule : Int64
+  ) : IOGGPacket;
+begin
+  Result := TOGG.NewPacket(data, sz, num, granule, true, false);
+end;
+
+class function TOGG.NewBOSPacket(data : Pointer; sz, num, granule : Int64
+  ) : IOGGPacket;
+begin
+  Result := TOGG.NewPacket(data, sz, num, granule, false, true);
 end;
 
 class function TOGG.RefPacket(st : pogg_packet) : IOGGPacket;
@@ -1061,6 +1136,66 @@ begin
 end;
 
 { TOGGRefPacket }
+
+function TOGGRefPacket.GetBOS : Boolean;
+begin
+  Result := Boolean(Ref^.b_o_s);
+end;
+
+function TOGGRefPacket.GetData : Pointer;
+begin
+  Result := Pointer(Ref^.packet);
+end;
+
+function TOGGRefPacket.GetEOS : Boolean;
+begin
+  Result := Boolean(Ref^.e_o_s);
+end;
+
+function TOGGRefPacket.GetGranulePos : Int64;
+begin
+  Result := Ref^.granulepos;
+end;
+
+function TOGGRefPacket.GetPacketNum : Int64;
+begin
+  Result := Ref^.packetno;
+end;
+
+function TOGGRefPacket.GetSize : Int64;
+begin
+  Result := Ref^.bytes;
+end;
+
+procedure TOGGRefPacket.SetBOS(AValue : Boolean);
+begin
+  Ref^.b_o_s := Int64(AValue);
+end;
+
+procedure TOGGRefPacket.SetData(AValue : Pointer);
+begin
+  Ref^.packet := AValue;
+end;
+
+procedure TOGGRefPacket.SetEOS(AValue : Boolean);
+begin
+  Ref^.e_o_s := Int64(AValue);
+end;
+
+procedure TOGGRefPacket.SetGranulePos(AValue : Int64);
+begin
+  Ref^.granulepos := AValue;
+end;
+
+procedure TOGGRefPacket.SetPacketNum(AValue : Int64);
+begin
+  Ref^.packetno := AValue;
+end;
+
+procedure TOGGRefPacket.SetSize(AValue : Int64);
+begin
+  Ref^.bytes := AValue;
+end;
 
 function TOGGRefPacket.Ref : pogg_packet;
 begin
